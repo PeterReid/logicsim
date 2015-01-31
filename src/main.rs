@@ -44,7 +44,7 @@ impl PropogationDelay {
 }
 
 trait Element {
-    fn step(&mut self, c: &mut NodeCollection);
+    fn step(&self, c: &mut NodeCollection);
     fn get_nodes(&self) -> Vec<NodeIndex>;
     //fn with_nodes<F>(&mut self, f: F)
         //where F: FnOnce(&[&mut NodeIndex]);
@@ -79,7 +79,7 @@ impl Node {
     }
 }
 
-#[derive(PartialEq, Eq, Copy)]
+#[derive(PartialEq, Eq, Copy, Debug)]
 struct LineStateEvent {
     node: NodeIndex,
     old_state: LineState,
@@ -130,17 +130,28 @@ impl<'a> NodeCollection<'a> {
     
     fn link(&mut self, a: NodeIndex, b: NodeIndex, delay: PropogationDelay) {
         self.nodes[a.get()].linked_with.push((b, delay));
-        self.nodes[b.get()].linked_with.push((b, delay));
+        self.nodes[b.get()].linked_with.push((a, delay));
     }
     
-    fn play(&mut self) {
+    fn play(&mut self) -> bool {
         if let Some(evt) = self.events.pop() {
-            let affected_node = &mut self.nodes[evt.node.get()];
-            let (old_low, old_high) = evt.old_state.lows_highs_count();
-            let (new_low, new_high) = evt.new_state.lows_highs_count();
-            affected_node.lows += new_low - old_low;
-            affected_node.highs += new_high - old_high;
-        }    
+            //println!("Playing event: {:?}", evt);
+            self.current_tick = evt.time;
+            if let Some(element_index) = {
+                let affected_node = &mut self.nodes[evt.node.get()];
+                let (old_low, old_high) = evt.old_state.lows_highs_count();
+                let (new_low, new_high) = evt.new_state.lows_highs_count();
+                affected_node.lows += new_low - old_low;
+                affected_node.highs += new_high - old_high;
+                affected_node.element_index
+            } {
+                self.elements[element_index.get()].step(self);
+            }
+            return true;
+        } else {
+            println!("No events");
+            return false;
+        }
     }
     
     fn add_element(&mut self, elem: &'a (Element + 'a)) {
@@ -152,7 +163,6 @@ impl<'a> NodeCollection<'a> {
                 self.nodes.push(Node::new());
             }
         
-            
             let node = &mut self.nodes[node_index.get()];
             assert!(node.element_index.is_none(), "An element tried to claim an already-claimed node!");
             node.element_index = Some(element_index);
@@ -160,6 +170,13 @@ impl<'a> NodeCollection<'a> {
     
         self.elements.push(elem);
         
+    }
+}
+
+impl ElementIndex {
+    fn get(self) -> usize {
+        let ElementIndex(idx) = self;
+        idx
     }
 }
 
@@ -202,10 +219,10 @@ impl NodeIndex {
     }
 }
 
-struct Transistor {
-    pub input: NodeIndex,
+struct Nand {
+    pub a: NodeIndex,
+    pub b: NodeIndex,
     pub output: NodeIndex,
-    pub enable: NodeIndex,
 }
 
 struct NodeCreator {
@@ -220,54 +237,94 @@ impl NodeCreator {
     }
 }
 
-impl Transistor {
-    fn new(c: &mut NodeCreator) -> Transistor {
-        Transistor {
-            input: c.new_node(),
+impl Nand {
+    fn new(c: &mut NodeCreator) -> Nand {
+        Nand {
+            a: c.new_node(),
+            b: c.new_node(),
             output: c.new_node(),
-            enable: c.new_node(),
         }
     }
 }
 
-impl Element for Transistor {
-    fn step(&mut self, c: &mut NodeCollection) {
-        self.output.write( match (self.enable.read(c), self.input.read(c)) {
-            (LineState::Low, _) => LineState::Floating,
-            (LineState::High, input_state) => input_state,
-            (LineState::Floating, LineState::Floating) => LineState::Floating,
-            (LineState::Floating, _) => LineState::Conflict,
+impl Element for Nand {
+    fn step(&self, c: &mut NodeCollection) {
+        self.output.write( match (self.a.read(c), self.b.read(c)) {
+            (LineState::Floating, _) => LineState::Floating, // not sure if this is physically accurate
+            (_, LineState::Floating) => LineState::Floating, // not sure if this is physically accurate
             (LineState::Conflict, _) => LineState::Conflict,
+            (_, LineState::Conflict) => LineState::Conflict,
+            (LineState::Low, LineState::Low) => LineState::High,
+            _ => LineState::Low
         }, c);
     }
     
     fn get_nodes(&self) -> Vec<NodeIndex> {
         let mut v = Vec::new();
-        v.push(self.input);
+        v.push(self.a);
+        v.push(self.b);
         v.push(self.output);
-        v.push(self.enable);
         v
     }
 }
 
+struct Pin {
+    node: NodeIndex
+}
 
+impl Pin {
+    fn new(c: &mut NodeCreator) -> Pin {
+        Pin {
+            node: c.new_node(),
+        }
+    }
+}
+
+impl Element for Pin {
+    fn step(&self, c: &mut NodeCollection) {
+    }
+    
+    fn get_nodes(&self) -> Vec<NodeIndex> {
+        let mut v = Vec::new();
+        v.push(self.node);
+        v
+    }
+}
 
 fn main() {
     let mut arena: Arena = Arena::new();
     
     let mut c = NodeCollection::new();
     let mut creator = NodeCreator{creation_index: 0};
-    let t1 = arena.alloc(|| { Transistor::new(&mut creator) });
-    let t2 = arena.alloc(|| { Transistor::new(&mut creator) });
+    let power = arena.alloc(|| { Pin::new(&mut creator) });
+    let ground = arena.alloc(|| { Pin::new(&mut creator) });
+    let overall_output = arena.alloc(|| { Pin::new(&mut creator) });
+    let t1 = arena.alloc(|| { Nand::new(&mut creator) });
+    let t2 = arena.alloc(|| { Nand::new(&mut creator) });
     
     //let power = c.new_node();
     //let ground = c.new_node();
     
+    c.add_element(power);
+    c.add_element(ground);
     c.add_element(t1);
     c.add_element(t2);
     
+    c.link(power.node, t1.a, PropogationDelay(100));
+    c.link(power.node, t1.b, PropogationDelay(100));
+    c.link(t1.output, t2.a, PropogationDelay(120));
+    c.link(t2.b, power.node, PropogationDelay(100));
+    c.link(t2.output, overall_output.node, PropogationDelay(40));
     
+    power.node.write(LineState::High, &mut c);
+    ground.node.write(LineState::Low, &mut c);
     
+    loop {
+        let more = c.play();
+        if !more { break; }
+    }
+    
+    println!("settled at t={}. out = {:?}", c.current_tick, overall_output.node.read(&c));
     
     //let t1 = Transistor::new(&mut c);
     //let t2 = Transistor::new(&mut c);
