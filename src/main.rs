@@ -1,4 +1,4 @@
-#![feature(core)]
+#![feature(core, rustc_private)]
 
 extern crate arena;
 
@@ -18,7 +18,7 @@ enum LineState {
 
 impl LineState {
     fn lows_highs_count(self) -> (u32, u32) {
-        match(self) {
+        match self {
             LineState::Low => (1, 0),
             LineState::High => (0, 1),
             LineState::Floating => (0, 0),
@@ -135,7 +135,7 @@ impl<'a> NodeCollection<'a> {
     
     fn play(&mut self) -> bool {
         if let Some(evt) = self.events.pop() {
-            //println!("Playing event: {:?}", evt);
+            println!("Playing event: {:?}", evt);
             self.current_tick = evt.time;
             if let Some(element_index) = {
                 let affected_node = &mut self.nodes[evt.node.get()];
@@ -151,6 +151,16 @@ impl<'a> NodeCollection<'a> {
         } else {
             println!("No events");
             return false;
+        }
+    }
+    
+    fn absorb<'b:'a>(&mut self, creator: NodeCreator<'b>) {
+        for element in creator.elements.iter() {
+            self.add_element(*element);
+        }
+        
+        for &(a, b, delay) in creator.links.iter() {
+            self.link(a, b, delay);
         }
     }
     
@@ -194,19 +204,34 @@ impl NodeIndex {
         }
     }
     
-    fn write(self, value: LineState, c: &mut NodeCollection) {
+    fn write(self, new_state: LineState, c: &mut NodeCollection) {
         let node = &mut c.nodes[self.get()];
+        
         let old_state = node.output_state;
-        node.output_state = value;
+        if new_state == old_state {
+            return; // no-op
+        }
+        
+        node.output_state = new_state;
         let now = c.current_tick;
         let mut id_counter = c.event_id_counter;
+        
+        id_counter += 1;
+        c.events.push(LineStateEvent{
+            node: self,
+            old_state: old_state,
+            new_state: new_state,
+            time: now,
+            id: id_counter
+        });
+        
         c.events.extend(node.linked_with.iter().map(|&mut : link: &(NodeIndex, PropogationDelay)| {
             let (linked_to, delay) = *link;
             id_counter += 1;
             LineStateEvent{
                 node: linked_to,
                 old_state: old_state,
-                new_state: value,
+                new_state: new_state,
                 time: now + delay.get() as u64,
                 id: id_counter,
             }
@@ -225,15 +250,34 @@ struct Nand {
     pub output: NodeIndex,
 }
 
-struct NodeCreator {
-    creation_index: usize
+struct NodeCreator<'a> {
+    creation_index: usize,
+    elements: Vec<&'a (Element + 'a)>,
+    links: Vec<(NodeIndex, NodeIndex, PropogationDelay)>,
 }
 
-impl NodeCreator {
+impl<'a> NodeCreator<'a> {
+
+    fn new(parent: &NodeCollection<'a>) -> NodeCreator<'a> {
+        NodeCreator{
+            creation_index: parent.nodes.len(),
+            elements: Vec::new(),
+            links: Vec::new()
+        }
+    }
+    
     fn new_node(&mut self) -> NodeIndex {
         let ret = self.creation_index;
         self.creation_index += 1;
         NodeIndex(ret)
+    }
+    
+    fn add_element(&mut self, elem: &'a (Element + 'a)) {
+        self.elements.push(elem);
+    }
+    
+    fn link(&mut self, a: NodeIndex, b: NodeIndex, delay: PropogationDelay) {
+        self.links.push((a, b, delay));
     }
 }
 
@@ -249,14 +293,17 @@ impl Nand {
 
 impl Element for Nand {
     fn step(&self, c: &mut NodeCollection) {
-        self.output.write( match (self.a.read(c), self.b.read(c)) {
+        
+        let res = match (self.a.read(c), self.b.read(c)) {
             (LineState::Floating, _) => LineState::Floating, // not sure if this is physically accurate
             (_, LineState::Floating) => LineState::Floating, // not sure if this is physically accurate
             (LineState::Conflict, _) => LineState::Conflict,
             (_, LineState::Conflict) => LineState::Conflict,
-            (LineState::Low, LineState::Low) => LineState::High,
-            _ => LineState::Low
-        }, c);
+            (LineState::High, LineState::High) => LineState::Low,
+            _ => LineState::High
+        };
+        println!("Running nand {:?} {:?} -> {:?}", self.a.read(c), self.b.read(c), res);
+        self.output.write(res , c);
     }
     
     fn get_nodes(&self) -> Vec<NodeIndex> {
@@ -281,7 +328,7 @@ impl Pin {
 }
 
 impl Element for Pin {
-    fn step(&self, c: &mut NodeCollection) {
+    fn step(&self, _: &mut NodeCollection) {
     }
     
     fn get_nodes(&self) -> Vec<NodeIndex> {
@@ -291,30 +338,65 @@ impl Element for Pin {
     }
 }
 
+struct AndGate {
+    a: NodeIndex,
+    b: NodeIndex,
+    output: NodeIndex,
+}
+
+const STANDARD_DELAY: PropogationDelay = PropogationDelay(100);
+
+impl AndGate {
+    fn new<'a, 'b:'a, 'c>(creator: &mut NodeCreator<'a>, arena: &'b Arena) -> AndGate {
+        let nander = arena.alloc(|| { Nand::new(creator) });
+        let notter = arena.alloc(|| { Nand::new(creator) });
+        
+        creator.add_element(nander);
+        creator.add_element(notter);
+        
+        creator.link(nander.output, notter.a, STANDARD_DELAY);
+        creator.link(nander.output, notter.b, STANDARD_DELAY);
+        
+        AndGate {
+            a: nander.a,
+            b: nander.b,
+            output: notter.output,
+        }
+    }
+}
+
 fn main() {
     let mut arena: Arena = Arena::new();
     
     let mut c = NodeCollection::new();
-    let mut creator = NodeCreator{creation_index: 0};
+    let mut creator = NodeCreator::new(&c);
     let power = arena.alloc(|| { Pin::new(&mut creator) });
     let ground = arena.alloc(|| { Pin::new(&mut creator) });
     let overall_output = arena.alloc(|| { Pin::new(&mut creator) });
-    let t1 = arena.alloc(|| { Nand::new(&mut creator) });
-    let t2 = arena.alloc(|| { Nand::new(&mut creator) });
+    //let t1 = arena.alloc(|| { Nand::new(&mut creator) });
+    //let t2 = arena.alloc(|| { Nand::new(&mut creator) });
+    
+    let and1 = AndGate::new(&mut creator, &arena);
+    let and2 = AndGate::new(&mut creator, &arena);
+    
+    creator.link(ground.node, and1.a, STANDARD_DELAY);
+    creator.link(ground.node, and1.b, STANDARD_DELAY);
+    creator.link(and1.output, overall_output.node, STANDARD_DELAY);
+    c.absorb(creator);
     
     //let power = c.new_node();
     //let ground = c.new_node();
     
     c.add_element(power);
     c.add_element(ground);
-    c.add_element(t1);
-    c.add_element(t2);
+    //c.add_element(t1);
+    //c.add_element(t2);
     
-    c.link(power.node, t1.a, PropogationDelay(100));
-    c.link(power.node, t1.b, PropogationDelay(100));
-    c.link(t1.output, t2.a, PropogationDelay(120));
-    c.link(t2.b, power.node, PropogationDelay(100));
-    c.link(t2.output, overall_output.node, PropogationDelay(40));
+    //c.link(power.node, t1.a, PropogationDelay(100));
+    //c.link(power.node, t1.b, PropogationDelay(100));
+    //c.link(t1.output, t2.a, PropogationDelay(120));
+    //c.link(t2.b, power.node, PropogationDelay(100));
+    //c.link(t2.output, overall_output.node, PropogationDelay(40));
     
     power.node.write(LineState::High, &mut c);
     ground.node.write(LineState::Low, &mut c);
