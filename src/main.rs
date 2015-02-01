@@ -244,6 +244,7 @@ impl NodeIndex {
     }
 }
 
+#[derive(Debug)]
 struct Nand {
     pub a: NodeIndex,
     pub b: NodeIndex,
@@ -302,7 +303,7 @@ impl Element for Nand {
             (LineState::High, LineState::High) => LineState::Low,
             _ => LineState::High
         };
-        println!("Running nand {:?} {:?} -> {:?}", self.a.read(c), self.b.read(c), res);
+        println!("Running nand {:?}: {:?} {:?} -> {:?}", self, self.a.read(c), self.b.read(c), res);
         self.output.write(res , c);
     }
     
@@ -338,16 +339,16 @@ impl Element for Pin {
     }
 }
 
+const STANDARD_DELAY: PropogationDelay = PropogationDelay(100);
+
 struct AndGate {
     a: NodeIndex,
     b: NodeIndex,
     output: NodeIndex,
 }
 
-const STANDARD_DELAY: PropogationDelay = PropogationDelay(100);
-
 impl AndGate {
-    fn new<'a, 'b:'a, 'c>(creator: &mut NodeCreator<'a>, arena: &'b Arena) -> AndGate {
+    fn new<'a, 'b:'a>(creator: &mut NodeCreator<'a>, arena: &'b Arena) -> AndGate {
         let nander = arena.alloc(|| { Nand::new(creator) });
         let notter = arena.alloc(|| { Nand::new(creator) });
         
@@ -365,6 +366,38 @@ impl AndGate {
     }
 }
 
+struct NWayAnd {
+    inputs: Vec<NodeIndex>,
+    output: NodeIndex,
+}
+
+impl NWayAnd {
+    fn new<'a, 'b:'a>(creator: &mut NodeCreator<'a>, arena: &'b Arena, input_count: usize) -> NWayAnd {
+        if input_count < 2 {
+            panic!("NWayAnd needs at least 2 inputs");
+        }
+        
+        let mut inputs = Vec::new();
+        
+        let and0 = AndGate::new(creator, arena);
+        inputs.push(and0.a);
+        inputs.push(and0.b);
+        let mut output_so_far = and0.output;
+        
+        for _ in range(2, input_count) {
+            let and = AndGate::new(creator, arena);
+            creator.link(output_so_far, and.a, STANDARD_DELAY);
+            output_so_far = and.output;
+            inputs.push(and.b);
+        }
+        
+        NWayAnd {
+            inputs: inputs,
+            output: output_so_far
+        }
+    }
+}
+
 fn main() {
     let mut arena: Arena = Arena::new();
     
@@ -378,10 +411,19 @@ fn main() {
     
     let and1 = AndGate::new(&mut creator, &arena);
     let and2 = AndGate::new(&mut creator, &arena);
+    let big_nander = NWayAnd::new(&mut creator, &arena, 20);
     
-    creator.link(ground.node, and1.a, STANDARD_DELAY);
-    creator.link(ground.node, and1.b, STANDARD_DELAY);
-    creator.link(and1.output, overall_output.node, STANDARD_DELAY);
+    println!("{:?}", big_nander.inputs);
+    for (i, big_nander_input) in big_nander.inputs.iter().enumerate() {
+        let high = true;
+        creator.link(if high {power.node} else {ground.node}, *big_nander_input, STANDARD_DELAY);
+    }
+    
+    creator.link(big_nander.output, overall_output.node, STANDARD_DELAY);
+    
+    //creator.link(ground.node, and1.a, STANDARD_DELAY);
+    //creator.link(ground.node, and1.b, STANDARD_DELAY);
+    //creator.link(and1.output, overall_output.node, STANDARD_DELAY);
     c.absorb(creator);
     
     //let power = c.new_node();
