@@ -275,8 +275,6 @@ impl NodeIndex {
     pub fn write_later(self, new_state: LineState, delta_time: PropogationDelay, c: &mut NodeCollection) {
         let node = &mut c.nodes[self.get()];
         
-        let old_state = node.output_state;
-        
         node.output_state = new_state;
         c.event_id_counter += 1;
         c.force_id_counter += 1;

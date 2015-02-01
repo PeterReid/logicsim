@@ -1,7 +1,5 @@
 use sim::{LineState, NodeIndex, NodeCreator, Element, NodeCollection};
 
-use arena::Arena;
-
 #[derive(Debug)]
 pub struct NandElem {
     pub a: NodeIndex,
