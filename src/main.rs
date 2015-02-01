@@ -20,20 +20,15 @@ fn main() {
     
     let mut c = NodeCollection::new();
     let mut creator = NodeCreator::new(&c);
-    let power = arena.alloc(|| { Pin::new(&mut creator) });
-    let ground = arena.alloc(|| { Pin::new(&mut creator) });
-    let overall_output = arena.alloc(|| { Pin::new(&mut creator) });
-    let clock = arena.alloc(|| { Pin::new(&mut creator) });
-    let data = arena.alloc(|| { Pin::new(&mut creator) });
+    let power = Pin::new(&mut creator, &arena);
+    let ground = Pin::new(&mut creator, &arena);
+    let overall_output = Pin::new(&mut creator, &arena);
+    let clock = Pin::new(&mut creator, &arena);
+    let data = Pin::new(&mut creator, &arena);
     
     //let not_s = arena.alloc(|| { Pin::new(&mut creator) });
     //let not_r = arena.alloc(|| { Pin::new(&mut creator) });
     
-    creator.add_element(power);
-    creator.add_element(ground);
-    creator.add_element(overall_output);
-    creator.add_element(clock);
-    creator.add_element(data);
     //c.add_element(not_s);
     //c.add_element(not_r);
     
