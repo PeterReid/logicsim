@@ -7,8 +7,9 @@ use arena::Arena;
 use std::collections::binary_heap::BinaryHeap;
 use std::cmp::PartialOrd;
 use std::cmp::{Ord, Ordering};
+use std::collections::HashSet;
 
-#[derive(Debug, PartialEq, Eq, Copy)]
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
 enum LineState {
     Low,
     High,
@@ -46,31 +47,50 @@ impl PropogationDelay {
 trait Element {
     fn step(&self, c: &mut NodeCollection);
     fn get_nodes(&self) -> Vec<NodeIndex>;
-    //fn with_nodes<F>(&mut self, f: F)
-        //where F: FnOnce(&[&mut NodeIndex]);
+}
+
+#[derive(Debug, Copy, Clone)]
+struct Link {
+    linked_to: NodeIndex,
+    delay: PropogationDelay,
+    id: u64,
+}
+
+#[derive(Debug, Copy, Clone)]
+struct Influence {
+    force_generator: NodeIndex,
+    force_kind: LineState,
+    force_id: u64,
 }
 
 struct Node {
-    lows: u32,
-    highs: u32,
     output_state: LineState,
-    linked_with: Vec<(NodeIndex, PropogationDelay)>,
+    linked_with: Vec<Link>,
     element_index: Option<ElementIndex>,
+    influences: Vec<Influence>
 }
 
 impl Node {
     fn new() -> Node {
         Node {
-            lows: 0,
-            highs: 0,
             output_state: LineState::Floating,
             linked_with: Vec::new(),
             element_index: None,
+            influences: Vec::new(),
         }
     }
     
     fn get_input_state(&self) -> LineState {
-        match (self.lows>0, self.highs>0) {
+        let mut lows = 0;
+        let mut highs = 0;
+        
+        for influence in self.influences.iter() {
+            let (delta_low, delta_high) = influence.force_kind.lows_highs_count();
+            lows += delta_low;
+            highs += delta_high;
+        }
+    
+        match (lows>0, highs>0) {
             (false, false) => LineState::Floating,
             (true, false) => LineState::Low,
             (false, true) => LineState::High,
@@ -82,10 +102,11 @@ impl Node {
 #[derive(PartialEq, Eq, Copy, Debug)]
 struct LineStateEvent {
     node: NodeIndex,
-    old_state: LineState,
     new_state: LineState,
     time: u64,
     id: u64, // to keep time ties in order
+    forcer: NodeIndex,
+    force_id: u64,
 }
 
 impl PartialOrd<LineStateEvent> for LineStateEvent {
@@ -114,6 +135,8 @@ struct NodeCollection<'a> {
     elements: Vec<&'a (Element + 'a)>,
     //element_arena: &'a Arena,
     event_id_counter: u64,
+    link_id_counter: u64,
+    force_id_counter: u64,
 }
 
 impl<'a> NodeCollection<'a> {
@@ -125,26 +148,76 @@ impl<'a> NodeCollection<'a> {
             current_tick: 0,
             elements: Vec::new(),
             event_id_counter: 0,
+            link_id_counter: 0,
+            force_id_counter: 0,
         }
     }
     
     fn link(&mut self, a: NodeIndex, b: NodeIndex, delay: PropogationDelay) {
-        self.nodes[a.get()].linked_with.push((b, delay));
-        self.nodes[b.get()].linked_with.push((a, delay));
+        self.link_id_counter += 1;
+        self.nodes[a.get()].linked_with.push(Link{linked_to: b, delay: delay, id: self.link_id_counter});
+        self.nodes[b.get()].linked_with.push(Link{linked_to: a, delay: delay, id: self.link_id_counter});
+    }
+    
+    fn apply_influence(&mut self, e: &LineStateEvent) {
+    
+        let target = &mut self.nodes[e.node.get()];
+        if let Some(ref mut existing_influence) = target.influences.iter_mut().find(|&: influence| { influence.force_generator == e.forcer }) {
+            if existing_influence.force_id >= e.force_id {
+                return;
+            }
+            existing_influence.force_id = e.force_id;
+            existing_influence.force_kind = e.new_state;
+            return;
+        }
+        
+        // No influence on this node so far.
+        target.influences.push(Influence{
+            force_generator: e.forcer,
+            force_id: e.force_id,
+            force_kind: e.new_state,
+        });
+    }
+    
+    fn play_event(&mut self, e: LineStateEvent) {
+        self.current_tick = e.time;
+        self.apply_influence(&e);
+        
+        let target = &self.nodes[e.node.get()];
+        
+        for adjacent_link in target.linked_with.iter() {
+            let adjacent_node = &self.nodes[adjacent_link.linked_to.get()];
+            let already_influenced = 
+                if let Some(existing) = adjacent_node.influences.iter().find(|&: influence| { influence.force_generator == e.forcer }) {
+                    existing.force_id >= e.force_id
+                } else {
+                    false
+                };
+            if !already_influenced {
+                self.event_id_counter += 1;
+                
+                println!("Propogating from {:?} to {:?} at time {:?} with delay {:?}", e.node, adjacent_link.linked_to, self.current_tick, adjacent_link.delay.get());
+                let evt = LineStateEvent{
+                    node: adjacent_link.linked_to,
+                    new_state: e.new_state,
+                    time: self.current_tick + adjacent_link.delay.get() as u64,
+                    id: self.event_id_counter,
+                    forcer: e.forcer,
+                    force_id: e.force_id,
+                };
+                self.events.push(evt);
+            }
+        }
     }
     
     fn play(&mut self) -> bool {
         if let Some(evt) = self.events.pop() {
             println!("Playing event: {:?}", evt);
-            self.current_tick = evt.time;
-            if let Some(element_index) = {
-                let affected_node = &mut self.nodes[evt.node.get()];
-                let (old_low, old_high) = evt.old_state.lows_highs_count();
-                let (new_low, new_high) = evt.new_state.lows_highs_count();
-                affected_node.lows += new_low - old_low;
-                affected_node.highs += new_high - old_high;
-                affected_node.element_index
-            } {
+            
+            let maybe_element_index = self.nodes[evt.node.get()].element_index;
+            self.play_event(evt);
+            
+            if let Some(element_index) = maybe_element_index{
                 self.elements[element_index.get()].step(self);
             }
             return true;
@@ -213,30 +286,18 @@ impl NodeIndex {
         }
         
         node.output_state = new_state;
-        let now = c.current_tick;
-        let mut id_counter = c.event_id_counter;
+        c.event_id_counter += 1;
+        c.force_id_counter += 1;
         
-        id_counter += 1;
-        c.events.push(LineStateEvent{
+        let evt = LineStateEvent{
             node: self,
-            old_state: old_state,
             new_state: new_state,
-            time: now,
-            id: id_counter
-        });
-        
-        c.events.extend(node.linked_with.iter().map(|&mut : link: &(NodeIndex, PropogationDelay)| {
-            let (linked_to, delay) = *link;
-            id_counter += 1;
-            LineStateEvent{
-                node: linked_to,
-                old_state: old_state,
-                new_state: new_state,
-                time: now + delay.get() as u64,
-                id: id_counter,
-            }
-        }));
-        c.event_id_counter = id_counter;
+            time: c.current_tick,
+            id: c.event_id_counter,
+            forcer: self,
+            force_id: c.force_id_counter,
+        };
+        c.events.push(evt);
     }
     
     fn read(self, c: &NodeCollection) -> LineState {
@@ -341,6 +402,7 @@ impl Element for Pin {
 
 const STANDARD_DELAY: PropogationDelay = PropogationDelay(100);
 
+#[derive(Debug)]
 struct AndGate {
     a: NodeIndex,
     b: NodeIndex,
@@ -396,6 +458,42 @@ impl NWayAnd {
             output: output_so_far
         }
     }
+    
+    
+    fn new_logtime<'a, 'b:'a>(creator: &mut NodeCreator<'a>, arena: &'b Arena, input_count: usize) -> NWayAnd {
+        if input_count == 0 {
+            panic!("Can't have an NWayAnd with no inputs!");
+        }
+         
+        let inputs : Vec<NodeIndex> = range(0, input_count).map(|_| { creator.new_node() }).collect();
+        let mut frontier : Vec<(NodeIndex, PropogationDelay)> = inputs.iter().map(|input| { (*input, PropogationDelay(0)) }).collect();
+        while frontier.len() > 1 {
+            println!("{:?}", frontier);
+            let mut next_frontier = Vec::new();
+            
+            for pair in frontier.as_slice().chunks(2) {
+                if pair.len() == 2 {
+                    let and = AndGate::new(creator, arena);
+                    let (node_a, delay_a) = pair[0];
+                    let (node_b, delay_b) = pair[1];
+                    creator.link(node_a, and.a, delay_a);
+                    creator.link(node_b, and.b, delay_b);
+                    next_frontier.push((and.output, STANDARD_DELAY));
+                } else {
+                    next_frontier.push(pair[0]);
+                }
+            }
+            
+            frontier = next_frontier;
+        }
+        
+        let (last_node, _) = frontier[0];
+        
+        NWayAnd {
+            inputs: inputs,
+            output: last_node
+        }
+    }
 }
 
 fn main() {
@@ -411,34 +509,30 @@ fn main() {
     
     let and1 = AndGate::new(&mut creator, &arena);
     let and2 = AndGate::new(&mut creator, &arena);
-    let big_nander = NWayAnd::new(&mut creator, &arena, 20);
+    //let big_nander = NWayAnd::new_logtime(&mut creator, &arena, 5);
     
-    println!("{:?}", big_nander.inputs);
+    /*println!("{:?}", big_nander.inputs);
     for (i, big_nander_input) in big_nander.inputs.iter().enumerate() {
         let high = true;
         creator.link(if high {power.node} else {ground.node}, *big_nander_input, STANDARD_DELAY);
     }
     
     creator.link(big_nander.output, overall_output.node, STANDARD_DELAY);
+    */
+    //creator.link(power.node, and2.a, STANDARD_DELAY);
     
-    //creator.link(ground.node, and1.a, STANDARD_DELAY);
-    //creator.link(ground.node, and1.b, STANDARD_DELAY);
-    //creator.link(and1.output, overall_output.node, STANDARD_DELAY);
+    creator.link(and2.a, and1.a, STANDARD_DELAY);
+    println!("And1 = {:?}", and1);
+    println!("And2 = {:?}", and2);
+    creator.link(power.node, and2.a, STANDARD_DELAY);
+    creator.link(power.node, and1.a, STANDARD_DELAY);
+    creator.link(ground.node, and1.b, STANDARD_DELAY);
+    creator.link(and1.output, overall_output.node, STANDARD_DELAY);
     c.absorb(creator);
-    
-    //let power = c.new_node();
-    //let ground = c.new_node();
     
     c.add_element(power);
     c.add_element(ground);
-    //c.add_element(t1);
-    //c.add_element(t2);
-    
-    //c.link(power.node, t1.a, PropogationDelay(100));
-    //c.link(power.node, t1.b, PropogationDelay(100));
-    //c.link(t1.output, t2.a, PropogationDelay(120));
-    //c.link(t2.b, power.node, PropogationDelay(100));
-    //c.link(t2.output, overall_output.node, PropogationDelay(40));
+    c.add_element(overall_output);
     
     power.node.write(LineState::High, &mut c);
     ground.node.write(LineState::Low, &mut c);
@@ -449,22 +543,4 @@ fn main() {
     }
     
     println!("settled at t={}. out = {:?}", c.current_tick, overall_output.node.read(&c));
-    
-    //let t1 = Transistor::new(&mut c);
-    //let t2 = Transistor::new(&mut c);
-    
-    //c.link(t1.output, t2.enable, PropogationDelay(100));
-    
-    //c.elements.push(t1);
-    
-    //t1.step(&mut c);
-    
-    
-    
-    //let mut t2 = arena.alloc(|| { Transistor::new() });
-    //let &mut t2 = Transistor::new();
-    
-    //t1.output.link_to(&mut t2.enable, 100);
-    
-    
 }
