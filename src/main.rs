@@ -91,7 +91,7 @@ impl Node {
         }
     
         match (lows>0, highs>0) {
-            (false, false) => LineState::Floating,
+            (false, false) => LineState::Low, // is this physically accurate? I am not sure
             (true, false) => LineState::Low,
             (false, true) => LineState::High,
             (true, true) => LineState::Conflict,
@@ -254,6 +254,13 @@ impl<'a> NodeCollection<'a> {
         self.elements.push(elem);
         
     }
+    
+    // We need to run each element in resolve-float mode
+    fn resolve_floats(&mut self) {
+        for i in range(0, self.elements.len()) {
+            self.elements[i].step(self);
+        }
+    }
 }
 
 impl ElementIndex {
@@ -278,12 +285,16 @@ impl NodeIndex {
     }
     
     fn write(self, new_state: LineState, c: &mut NodeCollection) {
+        if new_state == c.nodes[self.get()].output_state {
+            return; // no-op
+        }
+        self.write_later(new_state, PropogationDelay(0), c)
+    }
+    
+    fn write_later(self, new_state: LineState, delta_time: PropogationDelay, c: &mut NodeCollection) {
         let node = &mut c.nodes[self.get()];
         
         let old_state = node.output_state;
-        if new_state == old_state {
-            return; // no-op
-        }
         
         node.output_state = new_state;
         c.event_id_counter += 1;
@@ -292,7 +303,7 @@ impl NodeIndex {
         let evt = LineStateEvent{
             node: self,
             new_state: new_state,
-            time: c.current_tick,
+            time: c.current_tick + delta_time.get() as u64,
             id: c.event_id_counter,
             forcer: self,
             force_id: c.force_id_counter,
@@ -428,6 +439,34 @@ impl AndGate {
     }
 }
 
+#[derive(Debug)]
+struct NotSRLatch {
+    not_s: NodeIndex,
+    not_r: NodeIndex,
+    q: NodeIndex,
+    not_q: NodeIndex,
+}
+
+impl NotSRLatch {
+    fn new<'a, 'b:'a>(creator: &mut NodeCreator<'a>, arena: &'b Arena) -> NotSRLatch {
+        let top = arena.alloc(|| { Nand::new(creator) });
+        let bottom = arena.alloc(|| { Nand::new(creator) });
+        
+        creator.add_element(top);
+        creator.add_element(bottom);
+        
+        creator.link(top.output, bottom.a, STANDARD_DELAY);
+        creator.link(bottom.output, top.b, STANDARD_DELAY);
+        
+        NotSRLatch{
+            not_s: top.a,
+            not_r: bottom.b,
+            q: top.output,
+            not_q: bottom.output,
+        }
+    }
+}
+
 struct NWayAnd {
     inputs: Vec<NodeIndex>,
     output: NodeIndex,
@@ -505,9 +544,20 @@ fn main() {
     let ground = arena.alloc(|| { Pin::new(&mut creator) });
     let overall_output = arena.alloc(|| { Pin::new(&mut creator) });
     
-    let and1 = AndGate::new(&mut creator, &arena);
-    let and2 = AndGate::new(&mut creator, &arena);
-    let big_nander = NWayAnd::new_logtime(&mut creator, &arena, 50);
+    let not_s = arena.alloc(|| { Pin::new(&mut creator) });
+    let not_r = arena.alloc(|| { Pin::new(&mut creator) });
+    
+    c.add_element(power);
+    c.add_element(ground);
+    c.add_element(overall_output);
+    c.add_element(not_s);
+    c.add_element(not_r);
+    
+    let sr1 = NotSRLatch::new(&mut creator, &arena);
+    creator.link(not_s.node, sr1.not_s, STANDARD_DELAY);
+    creator.link(not_r.node, sr1.not_r, STANDARD_DELAY);
+    
+    /*let big_nander = NWayAnd::new_logtime(&mut creator, &arena, 50);
     
     println!("{:?}", big_nander.inputs);
     for (i, big_nander_input) in big_nander.inputs.iter().enumerate() {
@@ -516,6 +566,8 @@ fn main() {
     }
     
     creator.link(big_nander.output, overall_output.node, STANDARD_DELAY);
+    */
+    
     /*
     //creator.link(power.node, and2.a, STANDARD_DELAY);
     
@@ -530,17 +582,23 @@ fn main() {
     
     c.absorb(creator);
     
-    c.add_element(power);
-    c.add_element(ground);
-    c.add_element(overall_output);
-    
     power.node.write(LineState::High, &mut c);
     ground.node.write(LineState::Low, &mut c);
+    not_s.node.write(LineState::Low, &mut c);
+    not_r.node.write(LineState::High, &mut c);
+    
+    c.resolve_floats();
+    
+    not_s.node.write_later(LineState::High, PropogationDelay(1000), &mut c);
+    not_r.node.write_later(LineState::Low, PropogationDelay(2000), &mut c);
+    
     
     loop {
         let more = c.play();
         if !more { break; }
     }
     
-    println!("settled at t={}. out = {:?}", c.current_tick, overall_output.node.read(&c));
+    println!("q = {:?}, ~q = {:?}", sr1.q.read(&c), sr1.not_q.read(&c));
+    
+    //println!("settled at t={}. out = {:?}", c.current_tick, overall_output.node.read(&c));
 }
