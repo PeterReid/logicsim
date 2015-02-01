@@ -1,7 +1,7 @@
 
-use sim::{LineState, NodeIndex, NodeCreator, Element, NodeCollection, PropogationDelay, STANDARD_DELAY};
+use sim::{LineState, NodeIndex, NodeCreator, NodeCollection, PropogationDelay, STANDARD_DELAY};
 
-use logic_gates::{Nand, AndGate};
+use logic_gates::{NandGate, AndGate};
 
 use arena::Arena;
 
@@ -15,11 +15,8 @@ pub struct NotSRLatch {
 
 impl NotSRLatch {
     pub fn new<'a, 'b:'a>(creator: &mut NodeCreator<'a>, arena: &'b Arena) -> NotSRLatch {
-        let top = arena.alloc(|| { Nand::new(creator) });
-        let bottom = arena.alloc(|| { Nand::new(creator) });
-        
-        creator.add_element(top);
-        creator.add_element(bottom);
+        let top = NandGate::new(creator, arena);
+        let bottom = NandGate::new(creator, arena);
         
         creator.link(top.output, bottom.a, STANDARD_DELAY);
         creator.link(bottom.output, top.b, STANDARD_DELAY);
@@ -79,7 +76,7 @@ impl Register {
         let bits : Vec<DFlipFlop> = range(0, bit_count).map(|_| { DFlipFlop::new(creator, arena) }).collect();
         
         let clock = bits[0].clock;
-        for bit in bits.slice_from(1).iter() {
+        for bit in (&bits[1..]).iter() {
             creator.link(clock, bit.clock, STANDARD_DELAY);
         }
         

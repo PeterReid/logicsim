@@ -6,11 +6,9 @@ mod sim;
 mod storage;
 mod logic_gates;
 mod pin;
+mod nand;
 
 use arena::Arena;
-
-use std::collections::binary_heap::BinaryHeap;
-use std::collections::HashSet;
 
 use pin::Pin;
 
