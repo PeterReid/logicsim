@@ -1,6 +1,6 @@
 use sim::{NodeIndex, NodeCreator, NodeCollection, Element, PropogationDelay, STANDARD_DELAY, LineState};
 use pin::Pin;
-use mux::Mux;
+use mux::MuxN;
 
 use arena::Arena;
 
@@ -74,36 +74,26 @@ pub struct Rom {
     output: Vec<NodeIndex>,
 }
 impl Rom {
-    pub fn new(content: &[Vec<bool>], creator: &mut NodeCreator) -> Rom {
-        if content.len() == 1 {
-            Rom {
-                address: Vec::new(),
-                output: ConstantBits::new(&content[0][], creator).bits
-            }
-        } else {
-            let mut lower_size = 1;
-            while lower_size*2 < content.len() {
-                lower_size *= 2;
-            }
-            
-            let lower = Rom::new(&content[..lower_size], creator);
-            let upper = Rom::new(&content[lower_size..], creator);
-            
-            let mux = Mux::new(content[0].len(), creator);
-            creator.multilink(&lower.address[..upper.address.len()], &upper.address[], STANDARD_DELAY);
-            creator.multilink(&mux.a[], &lower.output[], STANDARD_DELAY);
-            creator.multilink(&mux.b[], &upper.output[], STANDARD_DELAY);
-            
-            let mut address = lower.address.clone();
-            address.push(mux.select);
-            Rom {
-                address: address,
-                output: mux.output,
-            }
+    pub fn new(content: &[&[bool]], creator: &mut NodeCreator) -> Rom {
+        let word_count = content.len();
+        assert!(word_count>0);
+        let word_bits = content[0].len();
+        
+        let mux = MuxN::new(word_bits, word_count, creator);
+        assert_eq!(content.len(), mux.inputs.len());
+        for (content_word, mux_input_word) in content.iter().zip(mux.inputs.iter()) {
+            let constant_generator = ConstantBits::new(*content_word, creator);
+            creator.multilink(&constant_generator.bits[], &mux_input_word[], STANDARD_DELAY);
+        }
+        
+        Rom {
+            address: mux.select,
+            output: mux.output,
         }
     }
 }
 
+#[cfg(test)]
 mod test {
     use truth_table::check_truth_table;
     use sim::{NodeCreator};
@@ -113,9 +103,9 @@ mod test {
     fn test_rom() {
         check_truth_table(|creator: &mut NodeCreator| {
             let rom = Rom::new(&[
-                ConstantBits::make_bits(5, 8),
-                ConstantBits::make_bits(128, 8),
-                ConstantBits::make_bits(255, 8),
+                &ConstantBits::make_bits(5, 8)[],
+                &ConstantBits::make_bits(128, 8)[],
+                &ConstantBits::make_bits(255, 8)[],
             ], creator);
             
             (rom.address.clone(), rom.output.clone())

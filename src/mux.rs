@@ -55,3 +55,77 @@ impl Mux {
         }
     }
 }
+
+pub struct MuxN {
+    pub inputs: Vec<Vec<NodeIndex>>,
+    pub output: Vec<NodeIndex>,
+    pub select: Vec<NodeIndex>,
+}
+
+impl MuxN {
+    pub fn new(word_bits: usize, word_count: usize, creator: &mut NodeCreator) -> MuxN {
+        assert!(word_count >= 1);
+        
+        if word_count == 1 {
+            let nodes : Vec<NodeIndex> = range(0, word_bits).map(|_| { creator.new_node() }).collect();
+            MuxN {
+                inputs: [nodes.clone()].to_vec(),
+                output: nodes.clone(),
+                select: Vec::new()
+            }
+        } else {
+            let mut lower_size = 1;
+            while lower_size*2 < word_count {
+                lower_size *= 2;
+            }
+            
+            let mut lower = MuxN::new(word_bits, lower_size, creator);
+            let mut upper = MuxN::new(word_bits, word_count - lower_size, creator);
+            let top_level_chooser = Mux::new(word_bits, creator);
+            creator.multilink(&lower.output[], &top_level_chooser.a[], STANDARD_DELAY);
+            creator.multilink(&upper.output[], &top_level_chooser.b[], STANDARD_DELAY);
+            creator.multilink(&lower.select[..upper.select.len()], &upper.select[], STANDARD_DELAY);
+            
+            let mut select = lower.select;
+            select.push(top_level_chooser.select);
+            let mut inputs = lower.inputs;
+            inputs.append(&mut upper.inputs);
+            assert_eq!(inputs.len(), word_count);
+            
+            MuxN {
+                inputs: inputs,
+                output: top_level_chooser.output,
+                select: select,
+            }
+        }
+    }
+}
+
+
+
+#[cfg(test)]
+mod test {
+    use truth_table::check_truth_table;
+    use sim::{NodeCreator};
+    use super::{MuxN};
+    
+    #[test]
+    fn test_muxn() {
+        check_truth_table(|creator: &mut NodeCreator| {
+            let mux = MuxN::new(4, 3, creator);
+            
+            let mut all_inputs = Vec::new();
+            all_inputs.append(&mut mux.select.clone());
+            for input in mux.inputs.iter() {
+                all_inputs.append(&mut input.clone());
+            }
+            
+            (all_inputs, mux.output.clone())
+        }, &[
+            (&[0,0,  1,1,1,1, 1,0,0,0, 0,1,0,1], &[1,1,1,1]),
+            (&[1,0,  1,1,1,1, 1,0,0,0, 0,1,0,1], &[1,0,0,0]),
+            (&[0,1,  1,1,1,1, 1,0,0,0, 0,1,0,1], &[0,1,0,1]),
+        ]);
+    }
+
+}
