@@ -2,7 +2,6 @@
 use std::collections::binary_heap::BinaryHeap;
 use std::cmp::PartialOrd;
 use std::cmp::{Ord, Ordering};
-use std::collections::HashSet;
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum LineState {
@@ -266,14 +265,6 @@ impl NodeIndex {
         idx
     }
 
-    fn set(&mut self, val: usize) {
-        match self {
-            &mut NodeIndex(ref mut x) => {
-                *x = val;
-            }
-        }
-    }
-    
     pub fn write(self, new_state: LineState, c: &mut NodeCollection) {
         if new_state == c.nodes[self.get()].output_state {
             return; // no-op
@@ -337,3 +328,5 @@ impl<'a> NodeCreator<'a> {
         self.links.push((a, b, delay));
     }
 }
+
+pub const STANDARD_DELAY: PropogationDelay = PropogationDelay(100);
