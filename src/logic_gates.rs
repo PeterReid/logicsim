@@ -144,3 +144,28 @@ impl XorGate {
         }
     }
 }
+
+pub struct OrGate {
+    pub a: NodeIndex,
+    pub b: NodeIndex,
+    pub output: NodeIndex,
+}
+
+impl OrGate {
+    pub fn new(creator: &mut NodeCreator) -> OrGate {
+        let not_a = NandGate::new(creator);
+        let not_b = NandGate::new(creator);
+        let or = NandGate::new(creator);
+        
+        creator.link(not_a.a, not_a.b, STANDARD_DELAY);
+        creator.link(not_b.a, not_b.b, STANDARD_DELAY);
+        creator.link(not_a.output, or.a, STANDARD_DELAY);
+        creator.link(not_b.output, or.b, STANDARD_DELAY);
+        
+        OrGate {
+            a: not_a.a,
+            b: not_b.b,
+            output: or.output,
+        }
+    }
+}

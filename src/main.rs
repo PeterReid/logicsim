@@ -8,6 +8,7 @@ mod logic_gates;
 mod pin;
 mod nand;
 mod adder;
+mod truth_table;
 
 use pin::Pin;
 

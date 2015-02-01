@@ -227,7 +227,6 @@ impl<'a> NodeCollection<'a> {
             }
             return true;
         } else {
-            println!("No events");
             return false;
         }
     }
