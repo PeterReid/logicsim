@@ -3,6 +3,9 @@ use std::collections::binary_heap::BinaryHeap;
 use std::cmp::PartialOrd;
 use std::cmp::{Ord, Ordering};
 
+use arena::Arena;
+use std::mem::transmute;
+
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum LineState {
     Low,
@@ -127,9 +130,9 @@ impl Ord for LineStateEvent {
 pub struct NodeCollection<'a> {
     nodes: Vec<Node>,
     events: BinaryHeap<LineStateEvent>,
-    current_tick: u64,
+    pub current_tick: u64,
     elements: Vec<&'a (Element + 'a)>,
-    //element_arena: &'a Arena,
+    element_arena: Arena,
     event_id_counter: u64,
     link_id_counter: u64,
     force_id_counter: u64,
@@ -138,6 +141,7 @@ pub struct NodeCollection<'a> {
 impl<'a> NodeCollection<'a> {
     pub fn new() -> NodeCollection<'a> {
         NodeCollection {
+            element_arena: Arena::new(),
             //element_arena: arena,
             nodes: Vec::new(),
             events: BinaryHeap::new(),
@@ -147,6 +151,11 @@ impl<'a> NodeCollection<'a> {
             link_id_counter: 0,
             force_id_counter: 0,
         }
+    }
+    
+    unsafe fn static_arena_ref(&self) -> &'static Arena {
+        let x : &'static Arena = transmute(&self.element_arena);
+        x
     }
     
     fn link(&mut self, a: NodeIndex, b: NodeIndex, delay: PropogationDelay) {
@@ -300,6 +309,7 @@ pub struct NodeCreator<'a> {
     creation_index: usize,
     elements: Vec<&'a (Element + 'a)>,
     links: Vec<(NodeIndex, NodeIndex, PropogationDelay)>,
+    pub arena: &'static Arena,
 }
 
 impl<'a> NodeCreator<'a> {
@@ -308,7 +318,8 @@ impl<'a> NodeCreator<'a> {
         NodeCreator{
             creation_index: parent.nodes.len(),
             elements: Vec::new(),
-            links: Vec::new()
+            links: Vec::new(),
+            arena: unsafe{ parent.static_arena_ref() },
         }
     }
     

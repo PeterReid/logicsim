@@ -14,9 +14,9 @@ pub struct NotSRLatch {
 }
 
 impl NotSRLatch {
-    pub fn new<'a, 'b:'a>(creator: &mut NodeCreator<'a>, arena: &'b Arena) -> NotSRLatch {
-        let top = NandGate::new(creator, arena);
-        let bottom = NandGate::new(creator, arena);
+    pub fn new(creator: &mut NodeCreator) -> NotSRLatch {
+        let top = NandGate::new(creator);
+        let bottom = NandGate::new(creator);
         
         creator.link(top.output, bottom.a, STANDARD_DELAY);
         creator.link(bottom.output, top.b, STANDARD_DELAY);
@@ -40,11 +40,11 @@ pub struct DFlipFlop {
 }
 
 impl DFlipFlop {
-    pub fn new<'a, 'b:'a>(creator: &mut NodeCreator<'a>, arena: &'b Arena) -> DFlipFlop {
-        let top = NotSRLatch::new(creator, arena);
-        let bottom = NotSRLatch::new(creator, arena);
-        let output = NotSRLatch::new(creator, arena);
-        let ander = AndGate::new(creator, arena);
+    pub fn new(creator: &mut NodeCreator) -> DFlipFlop {
+        let top = NotSRLatch::new(creator);
+        let bottom = NotSRLatch::new(creator);
+        let output = NotSRLatch::new(creator);
+        let ander = AndGate::new(creator);
         
         let clock = ander.a;
         
@@ -72,8 +72,8 @@ pub struct Register {
 }
 
 impl Register {
-    pub fn new<'a, 'b:'a>(creator: &mut NodeCreator<'a>, arena: &'b Arena, bit_count: usize) -> Register {
-        let bits : Vec<DFlipFlop> = range(0, bit_count).map(|_| { DFlipFlop::new(creator, arena) }).collect();
+    pub fn new(creator: &mut NodeCreator, bit_count: usize) -> Register {
+        let bits : Vec<DFlipFlop> = range(0, bit_count).map(|_| { DFlipFlop::new(creator) }).collect();
         
         let clock = bits[0].clock;
         for bit in (&bits[1..]).iter() {

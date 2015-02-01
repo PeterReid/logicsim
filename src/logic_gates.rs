@@ -11,8 +11,8 @@ pub struct NandGate {
 }
 
 impl NandGate {
-    pub fn new<'a, 'b:'a>(creator: &mut NodeCreator<'a>, arena: &'b Arena) -> NandGate {
-        let elem = arena.alloc(|| { NandElem::new(creator) });
+    pub fn new(creator: &mut NodeCreator) -> NandGate {
+        let elem = creator.arena.alloc(|| { NandElem::new(creator) });
         creator.add_element(elem);
         
         NandGate {
@@ -31,9 +31,9 @@ pub struct AndGate {
 }
 
 impl AndGate {
-    pub fn new<'a, 'b:'a>(creator: &mut NodeCreator<'a>, arena: &'b Arena) -> AndGate {
-        let nander = NandGate::new(creator, arena);
-        let notter = NandGate::new(creator, arena);
+    pub fn new(creator: &mut NodeCreator) -> AndGate {
+        let nander = NandGate::new(creator);
+        let notter = NandGate::new(creator);
         
         creator.link(nander.output, notter.a, STANDARD_DELAY);
         creator.link(nander.output, notter.b, STANDARD_DELAY);
@@ -54,20 +54,20 @@ pub struct NWayAnd {
 
 #[allow(dead_code)]
 impl NWayAnd {
-    pub fn new<'a, 'b:'a>(creator: &mut NodeCreator<'a>, arena: &'b Arena, input_count: usize) -> NWayAnd {
+    pub fn new(creator: &mut NodeCreator, input_count: usize) -> NWayAnd {
         if input_count < 2 {
             panic!("NWayAnd needs at least 2 inputs");
         }
         
         let mut inputs = Vec::new();
         
-        let and0 = AndGate::new(creator, arena);
+        let and0 = AndGate::new(creator);
         inputs.push(and0.a);
         inputs.push(and0.b);
         let mut output_so_far = and0.output;
         
         for _ in range(2, input_count) {
-            let and = AndGate::new(creator, arena);
+            let and = AndGate::new(creator);
             creator.link(output_so_far, and.a, STANDARD_DELAY);
             output_so_far = and.output;
             inputs.push(and.b);
@@ -80,7 +80,7 @@ impl NWayAnd {
     }
     
     
-    pub fn new_logtime<'a, 'b:'a>(creator: &mut NodeCreator<'a>, arena: &'b Arena, input_count: usize) -> NWayAnd {
+    pub fn new_logtime(creator: &mut NodeCreator, input_count: usize) -> NWayAnd {
         if input_count == 0 {
             panic!("Can't have an NWayAnd with no inputs!");
         }
@@ -93,7 +93,7 @@ impl NWayAnd {
             
             for pair in frontier.as_slice().chunks(2) {
                 if pair.len() == 2 {
-                    let and = AndGate::new(creator, arena);
+                    let and = AndGate::new(creator);
                     let (node_a, delay_a) = pair[0];
                     let (node_b, delay_b) = pair[1];
                     creator.link(node_a, and.a, delay_a);
@@ -112,6 +112,35 @@ impl NWayAnd {
         NWayAnd {
             inputs: inputs,
             output: last_node
+        }
+    }
+}
+
+
+pub struct XorGate {
+    pub a: NodeIndex,
+    pub b: NodeIndex,
+    pub output: NodeIndex,
+}
+
+impl XorGate {
+    pub fn new(creator: &mut NodeCreator) -> XorGate {
+        let a_nand_b = NandGate::new(creator);
+        let top = NandGate::new(creator);
+        let bottom = NandGate::new(creator);
+        let output = NandGate::new(creator);
+        
+        creator.link(a_nand_b.output, top.b, STANDARD_DELAY);
+        creator.link(a_nand_b.output, bottom.a, STANDARD_DELAY);
+        creator.link(a_nand_b.a, top.a, STANDARD_DELAY);
+        creator.link(a_nand_b.b, bottom.b, STANDARD_DELAY);
+        creator.link(top.output, output.a, STANDARD_DELAY);
+        creator.link(bottom.output, output.b, STANDARD_DELAY);
+        
+        XorGate {
+            a: a_nand_b.a,
+            b: a_nand_b.b,
+            output: output.output,
         }
     }
 }

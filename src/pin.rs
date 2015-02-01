@@ -30,8 +30,8 @@ pub struct Pin {
 }
 
 impl Pin {
-    pub fn new<'a, 'b:'a>(creator: &mut NodeCreator<'a>, arena: &'b Arena) -> Pin {
-        let elem = arena.alloc(|| { PinElem::new(creator) });
+    pub fn new(creator: &mut NodeCreator) -> Pin {
+        let elem = creator.arena.alloc(|| { PinElem::new(creator) });
         creator.add_element(elem);
         Pin {
             node: elem.node
