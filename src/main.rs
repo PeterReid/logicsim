@@ -504,21 +504,19 @@ fn main() {
     let power = arena.alloc(|| { Pin::new(&mut creator) });
     let ground = arena.alloc(|| { Pin::new(&mut creator) });
     let overall_output = arena.alloc(|| { Pin::new(&mut creator) });
-    //let t1 = arena.alloc(|| { Nand::new(&mut creator) });
-    //let t2 = arena.alloc(|| { Nand::new(&mut creator) });
     
     let and1 = AndGate::new(&mut creator, &arena);
     let and2 = AndGate::new(&mut creator, &arena);
-    //let big_nander = NWayAnd::new_logtime(&mut creator, &arena, 5);
+    let big_nander = NWayAnd::new_logtime(&mut creator, &arena, 50);
     
-    /*println!("{:?}", big_nander.inputs);
+    println!("{:?}", big_nander.inputs);
     for (i, big_nander_input) in big_nander.inputs.iter().enumerate() {
         let high = true;
         creator.link(if high {power.node} else {ground.node}, *big_nander_input, STANDARD_DELAY);
     }
     
     creator.link(big_nander.output, overall_output.node, STANDARD_DELAY);
-    */
+    /*
     //creator.link(power.node, and2.a, STANDARD_DELAY);
     
     creator.link(and2.a, and1.a, STANDARD_DELAY);
@@ -528,6 +526,8 @@ fn main() {
     creator.link(power.node, and1.a, STANDARD_DELAY);
     creator.link(ground.node, and1.b, STANDARD_DELAY);
     creator.link(and1.output, overall_output.node, STANDARD_DELAY);
+    */
+    
     c.absorb(creator);
     
     c.add_element(power);
