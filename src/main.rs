@@ -2,7 +2,7 @@
 
 extern crate arena;
 
-mod base;
+mod sim;
 
 use arena::Arena;
 
@@ -11,7 +11,7 @@ use std::cmp::PartialOrd;
 use std::cmp::{Ord, Ordering};
 use std::collections::HashSet;
 
-use base::{LineState, NodeIndex, NodeCreator, Element, NodeCollection, PropogationDelay};
+use sim::{LineState, NodeIndex, NodeCreator, Element, NodeCollection, PropogationDelay};
 
 #[derive(Debug)]
 struct Nand {
