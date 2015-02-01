@@ -239,6 +239,10 @@ impl<'a> NodeCollection<'a> {
         for &(a, b, delay) in creator.links.iter() {
             self.link(a, b, delay);
         }
+        
+        for i in range(0, self.elements.len()) {
+            self.elements[i].step(self);
+        }
     }
     
     fn add_element(&mut self, elem: &'a (Element + 'a)) {
@@ -334,6 +338,12 @@ impl<'a> NodeCreator<'a> {
     
     pub fn link(&mut self, a: NodeIndex, b: NodeIndex, delay: PropogationDelay) {
         self.links.push((a, b, delay));
+    }
+    
+    pub fn multilink(&mut self, froms: &[NodeIndex], tos: &[NodeIndex], delay: PropogationDelay) {
+        for (from, to) in froms.iter().zip(tos.iter()) {
+            self.link(*from, *to, delay);
+        }
     }
 }
 

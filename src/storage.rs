@@ -67,7 +67,8 @@ impl DFlipFlop {
 }
 
 pub struct Register {
-    pub bits: Vec<DFlipFlop>,
+    pub inputs: Vec<NodeIndex>,
+    pub outputs: Vec<NodeIndex>,
     pub clock: NodeIndex,
 }
 
@@ -81,15 +82,16 @@ impl Register {
         }
         
         Register {
-            bits: bits,
+            inputs: bits.iter().map(|bit| { return bit.data }).collect(),
+            outputs: bits.iter().map(|bit| { return bit.q }).collect(),
             clock: clock,
         }
     }
     
     pub fn read_u64(&self, c: &NodeCollection) -> Option<u64> {
         let mut accum = 0u64;
-        for (index, bit) in self.bits.iter().enumerate() {
-            match bit.q.read(c) {
+        for (index, output) in self.outputs.iter().enumerate() {
+            match output.read(c) {
                 LineState::Low => {},
                 LineState::High => {
                     accum |= 1<<index;

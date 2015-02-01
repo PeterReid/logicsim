@@ -46,6 +46,22 @@ impl AndGate {
     }
 }
 
+pub struct NotGate {
+    pub input: NodeIndex,
+    pub output: NodeIndex,
+}
+
+impl NotGate {
+    pub fn new(creator: &mut NodeCreator) -> NotGate {
+        let nand = NandGate::new(creator);
+        creator.link(nand.a, nand.b, STANDARD_DELAY);
+        NotGate {
+            input: nand.a,
+            output: nand.output
+        }
+    }
+}
+
 #[allow(dead_code)]
 pub struct NWayAnd {
     inputs: Vec<NodeIndex>,
