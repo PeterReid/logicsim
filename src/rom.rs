@@ -70,8 +70,8 @@ impl ConstantBits {
 
 
 pub struct Rom {
-    address: Vec<NodeIndex>,
-    output: Vec<NodeIndex>,
+    pub address: Vec<NodeIndex>,
+    pub output: Vec<NodeIndex>,
 }
 impl Rom {
     pub fn new(content: &[&[bool]], creator: &mut NodeCreator) -> Rom {

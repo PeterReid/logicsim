@@ -46,6 +46,22 @@ impl AndGate {
     }
 }
 
+pub struct AndGateVec {
+    pub a: Vec<NodeIndex>,
+    pub b: Vec<NodeIndex>,
+    pub output: Vec<NodeIndex>,
+}
+impl AndGateVec {
+    pub fn new(count: usize, creator: &mut NodeCreator) -> AndGateVec {
+        let subgates : Vec<AndGate> = range(0, count).map(|_| { AndGate::new(creator) }).collect();
+        AndGateVec {
+            a: subgates.iter().map(|gate| { gate.a }).collect(),
+            b: subgates.iter().map(|gate| { gate.b }).collect(),
+            output: subgates.iter().map(|gate| { gate.output }).collect(),
+        }
+    }
+}
+
 pub struct NotGate {
     pub input: NodeIndex,
     pub output: NodeIndex,
@@ -157,6 +173,22 @@ impl XorGate {
             a: a_nand_b.a,
             b: a_nand_b.b,
             output: output.output,
+        }
+    }
+}
+
+pub struct XorGateVec {
+    pub a: Vec<NodeIndex>,
+    pub b: Vec<NodeIndex>,
+    pub output: Vec<NodeIndex>,
+}
+impl XorGateVec {
+    pub fn new(count: usize, creator: &mut NodeCreator) -> XorGateVec {
+        let subgates : Vec<XorGate> = range(0, count).map(|_| { XorGate::new(creator) }).collect();
+        XorGateVec {
+            a: subgates.iter().map(|gate| { gate.a }).collect(),
+            b: subgates.iter().map(|gate| { gate.b }).collect(),
+            output: subgates.iter().map(|gate| { gate.output }).collect(),
         }
     }
 }

@@ -11,6 +11,8 @@ mod adder;
 mod rom;
 mod mux;
 
+mod cpu0;
+
 #[cfg(test)]
 mod truth_table;
 

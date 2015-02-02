@@ -56,12 +56,12 @@ impl Adder {
 }
 
 pub struct RippleCarryAdder {
-    a: Vec<NodeIndex>,
-    b: Vec<NodeIndex>,
-    carry_in: NodeIndex,
+    pub a: Vec<NodeIndex>,
+    pub b: Vec<NodeIndex>,
+    pub carry_in: NodeIndex,
     
-    sum: Vec<NodeIndex>,
-    carry_out: NodeIndex,
+    pub sum: Vec<NodeIndex>,
+    pub carry_out: NodeIndex,
 }
 impl RippleCarryAdder {
     pub fn new(creator: &mut NodeCreator, bits: usize) -> RippleCarryAdder {

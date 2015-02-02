@@ -345,6 +345,12 @@ impl<'a> NodeCreator<'a> {
             self.link(*from, *to, delay);
         }
     }
+    
+    pub fn link_one_to_many(&mut self, from: NodeIndex, tos: &[NodeIndex], delay: PropogationDelay) {
+        for to in tos.iter() {
+            self.link(from, *to, delay);
+        }
+    }
 }
 
 pub const STANDARD_DELAY: PropogationDelay = PropogationDelay(100);
