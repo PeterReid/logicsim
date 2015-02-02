@@ -10,6 +10,7 @@ mod nand;
 mod adder;
 mod rom;
 mod mux;
+mod demux;
 
 mod cpu0;
 

@@ -118,7 +118,8 @@ mod test {
     fn alu_ops() {
         check_truth_table(|creator: &mut NodeCreator| {
             let params = Params{
-                word_bits: 4
+                word_bits: 4,
+                log_register_count: 8,
             };
             let alu = Alu::new(&params, creator);
             

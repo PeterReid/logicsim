@@ -337,6 +337,9 @@ impl<'a> NodeCreator<'a> {
     }
     
     pub fn link(&mut self, a: NodeIndex, b: NodeIndex, delay: PropogationDelay) {
+        if a==b {
+            return;
+        }
         self.links.push((a, b, delay));
     }
     
